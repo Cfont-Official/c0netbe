@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DuckDuckGo → YouTube Video Search Proxy</title>
+  <style>
+    body{font-family:system-ui;background:#0f172a;color:#e6eef8;padding:20px;margin:0}
+    input[type="search"]{padding:10px;border-radius:10px;width:60%;border:1px solid #334155;background:#1e293b;color:#e2e8f0}
+    button{padding:10px 14px;border-radius:10px;background:#2563eb;color:white;border:0;cursor:pointer;margin-left:8px}
+    .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:20px}
+    .card{background:#1e293b;padding:8px;border-radius:10px;text-align:center;cursor:pointer}
+    .card img{width:100%;border-radius:6px}
+    iframe{width:100%;height:80vh;border:0}
+    .playerWrap{display:none;position:fixed;inset:0;background:#000;padding:10px;z-index:9999}
+    .playerWrap.show{display:block}
+    .close{position:absolute;top:10px;right:10px;background:#2563eb;color:white;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+  </style>
+</head>
+<body>
+  <h2>DuckDuckGo → YouTube Search Proxy</h2>
+  <input id="q" type="search" placeholder="Search YouTube videos (e.g. lo-fi beats)" />
+  <button id="searchBtn">Search</button>
+  <div id="results" class="results"></div>
+  <div id="playerWrap" class="playerWrap">
+    <button class="close" id="closeBtn">Close ✕</button>
+    <div id="playerContainer"></div>
+  </div>
+
+  <script>
+    const qInput = document.getElementById('q');
+    const resultsEl = document.getElementById('results');
+    const playerWrap = document.getElementById('playerWrap');
+    const playerContainer = document.getElementById('playerContainer');
+    const searchBtn = document.getElementById('searchBtn');
+    const closeBtn = document.getElementById('closeBtn');
+
+    searchBtn.onclick = doSearch;
+    qInput.onkeydown = e => e.key==='Enter' && doSearch();
+    closeBtn.onclick = closePlayer;
+
+    async function doSearch(){
+      const q = qInput.value.trim();
+      if(!q) return;
+      resultsEl.innerHTML = '<p>Searching...</p>';
+      const res = await fetch(`/search?q=${encodeURIComponent(q)}`);
+      const html = await res.text();
+      const vids = parseDuckDuckGoHtml(html);
+      renderResults(vids);
+    }
+
+    function parseDuckDuckGoHtml(html){
+      const doc = new DOMParser().parseFromString(html,'text/html');
+      const links = doc.querySelectorAll('a.result__a');
+      const vids = [];
+      for(const a of links){
+        const href = a.href;
+        const id = extractYouTubeId(href);
+        if(id) vids.push({id,title:a.textContent.trim()});
+      }
+      const uniq = Array.from(new Map(vids.map(v=>[v.id,v])).values());
+      return uniq;
+    }
+
+    function extractYouTubeId(url){
+      const u = new URL(url,'https://duckduckgo.com');
+      const wrapped = u.searchParams.get('uddg');
+      if(wrapped) return extractYouTubeId(decodeURIComponent(wrapped));
+      let m = url.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+      if(m) return m[1];
+      m = url.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+      if(m) return m[1];
+      return null;
+    }
+
+    function renderResults(vids){
+      resultsEl.innerHTML = '';
+      for(const v of vids){
+        const div = document.createElement('div');
+        div.className='card';
+        div.innerHTML = `<img src="https://i.ytimg.com/vi/${v.id}/hqdefault.jpg"><div>${v.title}</div>`;
+        div.onclick = ()=>openPlayer(v.id);
+        resultsEl.appendChild(div);
+      }
+    }
+
+    function openPlayer(id){
+      resultsEl.style.display='none';
+      playerContainer.innerHTML = `<iframe allowfullscreen src="https://www.youtube-nocookie.com/embed/${id}?autoplay=1"></iframe>`;
+      playerWrap.classList.add('show');
+    }
+
+    function closePlayer(){
+      playerWrap.classList.remove('show');
+      resultsEl.style.display='grid';
+      playerContainer.innerHTML='';
+    }
+  </script>
+</body>
+</html>
